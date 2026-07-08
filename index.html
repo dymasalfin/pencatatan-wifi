@@ -1,0 +1,475 @@
+
+<!DOCTYPE html>
+
+<html lang="id">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>Manajemen Pemasangan FTTH — v3</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<style>
+body{background:#eef2f7}
+.card{border-radius:16px}
+table th{background:#0d6efd;color:#fff}
+
+body{padding:8px}
+.container{max-width:100%}
+@media (max-width:768px){
+ h2{text-align:center;font-size:1.3rem}
+ .card{padding:12px!important}
+ .table{font-size:12px}
+ .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch}
+ .toolbar .btn{display:block;width:100%;margin:6px 0}
+}
+
+/* Form di dalam modal */
+#modalCatatan .form-label{margin-bottom:4px;font-weight:500;font-size:.9rem}
+
+/* Placeholder lebih pudar, beda dari teks isian */
+.form-control::placeholder{color:#b6bec8;opacity:1}
+.form-select.kosong{color:#b6bec8}
+.form-select.kosong option{color:#212529}
+
+/* Mobile: modal jadi bottom sheet */
+@media (max-width:576px){
+ #modalCatatan .modal-dialog{position:fixed;bottom:0;left:0;right:0;margin:0;max-width:100%;align-items:flex-end}
+ #modalCatatan .modal-content{border-radius:20px 20px 0 0!important;border:0}
+ #modalCatatan.fade .modal-dialog{transform:translateY(100%);transition:transform .25s ease-out}
+ #modalCatatan.show .modal-dialog{transform:none}
+ #modalCatatan .modal-footer .btn{flex:1}
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script></head>
+<body>
+
+<!-- Halaman Login -->
+<div id="halamanLogin" style="display:none">
+<div class="card p-4 mx-auto shadow-sm" style="max-width:380px;margin-top:14vh">
+<h4 class="mb-1">📡 Pencatatan WiFi</h4>
+<p class="text-muted small mb-3">Masuk untuk mengakses pencatatan</p>
+<label class="form-label" for="emailLogin">Email</label>
+<input id="emailLogin" type="email" class="form-control mb-2" placeholder="nama@email.com"/>
+<label class="form-label" for="passLogin">Password</label>
+<input id="passLogin" type="password" class="form-control mb-3" placeholder="Password" onkeydown="if(event.key==='Enter')masuk()"/>
+<div id="loginError" class="text-danger small mb-2" style="display:none"></div>
+<button class="btn btn-primary w-100" id="btnMasuk" onclick="masuk()">Masuk</button>
+</div>
+</div>
+
+<!-- Aplikasi -->
+<div class="container py-4" id="app" style="display:none">
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+<h2 class="mb-0">📡 WIFI  📡 <span class="badge bg-secondary" style="font-size:.45em;vertical-align:middle">v3</span> <span id="statusKoneksi" class="badge bg-secondary" style="font-size:.45em;vertical-align:middle">offline</span></h2>
+<div class="toolbar d-flex flex-wrap justify-content-end gap-2">
+<button class="btn btn-outline-secondary" onclick="exportCSV()">Export Excel</button>
+<button class="btn btn-outline-secondary" onclick="exportPDF()">Export PDF</button>
+<button class="btn btn-primary" onclick="bukaTambah()">＋ Tambah Data</button>
+<button class="btn btn-outline-danger" id="btnKeluar" onclick="keluar()">Keluar</button>
+</div>
+</div>
+
+<div id="bannerOffline" class="alert alert-warning py-2 mb-3" style="display:none">
+⚠️ Belum terhubung database online — data hanya tersimpan di perangkat ini dan tidak terlihat oleh teknisi lain.
+</div>
+
+<input class="form-control mb-2" id="cari" placeholder="Cari..."/>
+<div class="text-muted small mb-2" id="jumlah"></div>
+<div class="table-responsive"><table class="table table-bordered table-hover bg-white">
+<thead>
+<tr>
+<th>Tanggal</th>
+<th>Koordinat</th>
+<th>Nama Modem</th>
+<th>OLT</th>
+<th>PON</th>
+<th>Redaman</th><th>Teknisi</th>
+<th>Nama Pelanggan</th>
+<th>Aksi</th>
+</tr>
+</thead>
+<tbody id="tb"></tbody>
+</table></div>
+<div class="text-center mb-3">
+<button class="btn btn-outline-primary" id="btnLagi" style="display:none" onclick="muat(false)">Muat lebih banyak</button>
+</div>
+</div>
+
+<!-- Modal Tambah / Edit Catatan -->
+<div class="modal fade" id="modalCatatan" tabindex="-1">
+<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+<div class="modal-content" style="border-radius:16px">
+<div class="modal-header">
+<h5 class="modal-title" id="modalJudul">Tambah Catatan</h5>
+<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+<div class="modal-body">
+<div class="row g-3">
+<div class="col-12">
+<label class="form-label" for="titik">Nama Pelanggan</label>
+<input class="form-control" id="titik" placeholder="Nama pelanggan"/>
+</div>
+<div class="col-12">
+<label class="form-label" for="koordinat">Koordinat</label>
+<input class="form-control" id="koordinat" placeholder="-8.123456,114.123456"/>
+</div>
+<div class="col-md-6">
+<label class="form-label" for="barang">Nama Modem</label>
+<select class="form-select" id="barang" onchange="cekTambahModem()"></select>
+</div>
+<div class="col-md-6">
+<label class="form-label" for="teknisi">Teknisi</label>
+<select class="form-select" id="teknisi">
+<option>IBRA</option>
+<option>NAFIS</option>
+<option>PAK NO</option>
+<option>PANI</option>
+</select>
+</div>
+<div class="col-4">
+<label class="form-label" for="olt">OLT</label>
+<input class="form-control" id="olt" placeholder="EPON 4 PORT"/>
+</div>
+<div class="col-4">
+<label class="form-label" for="pon">PON</label>
+<input class="form-control" id="pon" placeholder="PON 1"/>
+</div>
+<div class="col-4">
+<label class="form-label" for="redaman">Redaman</label>
+<input class="form-control" id="redaman" placeholder="-18.5 dBm"/>
+</div>
+</div>
+</div>
+<div class="modal-footer">
+<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+<button type="button" class="btn btn-primary" id="btnSimpan" onclick="simpan()">Simpan</button>
+</div>
+</div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ================= KONEKSI DATABASE (Supabase) =================
+const SUPABASE_URL="https://utnhvzbzvmxnifypkafc.supabase.co";
+const SUPABASE_KEY="sb_publishable_rSxjwQtDLQxQ_qZuRGstWA_LQVEr9Wq";
+const sb=(SUPABASE_URL&&SUPABASE_KEY)?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
+// ===============================================================
+
+const PAGE=100;
+let rows=[];
+let adaLagi=false;
+let kataCari="";
+let editId=null;
+let modalCatatan;
+let channelRealtime=null;
+let appSudahInit=false;
+
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+// ---- Login ----
+function tampilkan(bagian){
+ halamanLogin.style.display=bagian==="login"?"":"none";
+ app.style.display=bagian==="app"?"":"none";
+}
+
+async function masuk(){
+ loginError.style.display="none";
+ btnMasuk.disabled=true;btnMasuk.textContent="Memeriksa…";
+ const {error}=await sb.auth.signInWithPassword({email:emailLogin.value.trim(),password:passLogin.value});
+ btnMasuk.disabled=false;btnMasuk.textContent="Masuk";
+ if(error){
+  loginError.textContent="Email atau password salah.";
+  loginError.style.display="";
+ }
+}
+
+async function keluar(){
+ if(!confirm("Keluar dari aplikasi?")) return;
+ await sb.auth.signOut();
+}
+
+// ---- Daftar modem ----
+const modemDefault=["Huawei HG8145V5","Huawei EG8245H5","Huawei Biasa","ZTE F609"];
+let modemList=modemDefault.slice();
+const TAMBAH_MODEM="__tambah__";
+
+function renderModem(pilih){
+ barang.innerHTML=`<option disabled selected value="">Pilih Modem</option>`
+  +modemList.map(m=>`<option>${esc(m)}</option>`).join("")
+  +`<option value="${TAMBAH_MODEM}">＋ Tambah modem baru…</option>`;
+ if(pilih) barang.value=pilih;
+ barang.classList.toggle("kosong",!barang.value);
+}
+
+async function muatModem(){
+ if(sb){
+  const {data:d,error}=await sb.from("modem").select("nama").order("nama");
+  if(!error&&d) modemList=d.map(x=>x.nama);
+ }else{
+  modemList=JSON.parse(localStorage.getItem("ftthModems")||"null")||modemDefault.slice();
+ }
+ const dipilih=barang&&barang.value&&barang.value!==TAMBAH_MODEM?barang.value:null;
+ renderModem(dipilih);
+}
+
+async function cekTambahModem(){
+ barang.classList.toggle("kosong",!barang.value);
+ if(barang.value!==TAMBAH_MODEM) return;
+ const nama=(prompt("Nama modem baru:")||"").trim();
+ if(!nama){
+  barang.selectedIndex=0;
+  barang.classList.add("kosong");
+  return;
+ }
+ const ada=modemList.find(m=>m.toLowerCase()===nama.toLowerCase());
+ if(ada){
+  alert("Modem sudah ada di daftar.");
+  barang.value=ada;
+  return;
+ }
+ if(sb){
+  const {error}=await sb.from("modem").insert({nama});
+  if(error){alert("Gagal menambah modem: "+error.message);barang.selectedIndex=0;barang.classList.add("kosong");return;}
+  await muatModem();
+  renderModem(nama);
+ }else{
+  modemList.push(nama);
+  localStorage.setItem("ftthModems",JSON.stringify(modemList));
+  renderModem(nama);
+ }
+}
+
+// ---- Tanggal ----
+function tglTampil(iso){
+ if(!iso) return "-";
+ return new Date(iso).toLocaleString("id-ID",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
+}
+
+// ---- Ambil data ----
+function terapkanCari(q){
+ const k=kataCari.replace(/[%,()]/g,"").trim();
+ if(!k) return q;
+ return q.or(`titik.ilike.%${k}%,koordinat.ilike.%${k}%,barang.ilike.%${k}%,olt.ilike.%${k}%,pon.ilike.%${k}%,teknisi.ilike.%${k}%`);
+}
+
+async function muat(reset=true){
+ if(sb){
+  const dari=reset?0:rows.length;
+  let q=sb.from("catatan").select("*",{count:"exact"}).order("tanggal",{ascending:false}).order("id",{ascending:false}).range(dari,dari+PAGE-1);
+  q=terapkanCari(q);
+  const {data:d,count,error}=await q;
+  if(error){alert("Gagal memuat data: "+error.message);return;}
+  rows=reset?d:rows.concat(d);
+  adaLagi=rows.length<count;
+  jumlah.textContent=`${count} catatan${kataCari?" (hasil cari)":""} — menampilkan ${rows.length}`;
+ }else{
+  let semua=JSON.parse(localStorage.getItem("ftthData")||"[]");
+  let ubah=false;
+  semua.forEach((d,i)=>{if(!d.id){d.id=Date.now()+i;ubah=true;}});
+  if(ubah) localStorage.setItem("ftthData",JSON.stringify(semua));
+  const k=kataCari.toLowerCase();
+  rows=k?semua.filter(d=>JSON.stringify(d).toLowerCase().includes(k)):semua;
+  rows=rows.slice().reverse();
+  adaLagi=false;
+  jumlah.textContent=`${rows.length} catatan (tersimpan di perangkat ini)`;
+ }
+ render();
+}
+
+function render(){
+ tb.innerHTML=rows.map(d=>`<tr>
+<td>${tglTampil(d.tanggal)}</td>
+<td>${esc(d.koordinat)}</td>
+<td>${esc(d.barang)}</td>
+<td>${esc(d.olt)}</td>
+<td>${esc(d.pon)}</td>
+<td>${esc(d.redaman)||"-"}</td><td>${esc(d.teknisi)}</td>
+<td>${esc(d.titik)}</td>
+<td><button class='btn btn-warning btn-sm me-1' onclick='editData(${d.id})'>Edit</button><button class='btn btn-danger btn-sm' onclick='hapus(${d.id})'>Hapus</button></td>
+</tr>`).join("");
+ btnLagi.style.display=adaLagi?"":"none";
+}
+
+// ---- Modal ----
+function bukaTambah(){
+ editId=null;
+ koordinat.value=olt.value=pon.value=redaman.value=titik.value="";
+ renderModem();
+ teknisi.selectedIndex=0;
+ modalJudul.textContent="Tambah Catatan";
+ btnSimpan.textContent="Simpan";
+ modalCatatan.show();
+}
+
+function editData(id){
+ const d=rows.find(r=>r.id===id);
+ if(!d) return;
+ koordinat.value=d.koordinat;
+ renderModem(d.barang);
+ olt.value=d.olt;
+ pon.value=d.pon;
+ redaman.value=d.redaman||"";
+ teknisi.value=d.teknisi;
+ titik.value=d.titik;
+ editId=id;
+ modalJudul.textContent="Edit Catatan";
+ btnSimpan.textContent="Update";
+ modalCatatan.show();
+}
+
+async function simpan(){
+ if(barang.value===""||barang.value===TAMBAH_MODEM){
+  alert("Pilih nama modem dulu.");
+  return;
+ }
+ const item={
+  koordinat:koordinat.value,
+  barang:barang.value,
+  olt:olt.value,
+  pon:pon.value,
+  redaman:redaman.value,
+  teknisi:teknisi.value,
+  titik:titik.value
+ };
+ btnSimpan.disabled=true;
+ if(sb){
+  const {error}=editId==null
+   ?await sb.from("catatan").insert(item)
+   :await sb.from("catatan").update(item).eq("id",editId);
+  btnSimpan.disabled=false;
+  if(error){alert("Gagal menyimpan: "+error.message);return;}
+ }else{
+  let semua=JSON.parse(localStorage.getItem("ftthData")||"[]");
+  if(editId==null){
+   semua.push({...item,id:Date.now(),tanggal:new Date().toISOString()});
+  }else{
+   const i=semua.findIndex(d=>d.id===editId);
+   if(i>-1) semua[i]={...semua[i],...item};
+  }
+  localStorage.setItem("ftthData",JSON.stringify(semua));
+  btnSimpan.disabled=false;
+ }
+ editId=null;
+ modalCatatan.hide();
+ muat(true);
+}
+
+async function hapus(id){
+ if(!confirm("Hapus catatan ini?")) return;
+ if(sb){
+  const {error}=await sb.from("catatan").delete().eq("id",id);
+  if(error){alert("Gagal menghapus: "+error.message);return;}
+ }else{
+  let semua=JSON.parse(localStorage.getItem("ftthData")||"[]");
+  localStorage.setItem("ftthData",JSON.stringify(semua.filter(d=>d.id!==id)));
+ }
+ muat(true);
+}
+
+// ---- Pencarian ----
+let timerCari=null;
+cari.addEventListener("input",()=>{
+ clearTimeout(timerCari);
+ timerCari=setTimeout(()=>{kataCari=cari.value;muat(true);},300);
+});
+
+// ---- Realtime ----
+let timerMuat=null;
+function muatUlangTunda(){clearTimeout(timerMuat);timerMuat=setTimeout(()=>muat(true),300);}
+
+function setStatus(online){
+ statusKoneksi.textContent=online?"● realtime":"offline";
+ statusKoneksi.className="badge "+(online?"bg-success":"bg-secondary");
+ statusKoneksi.style.cssText="font-size:.45em;vertical-align:middle";
+}
+
+function initApp(){
+ muatModem();
+ muat(true);
+ if(!appSudahInit&&sb){
+  appSudahInit=true;
+  channelRealtime=sb.channel("perubahan")
+   .on("postgres_changes",{event:"*",schema:"public",table:"catatan"},muatUlangTunda)
+   .on("postgres_changes",{event:"*",schema:"public",table:"modem"},muatModem)
+   .subscribe(s=>setStatus(s==="SUBSCRIBED"));
+ }
+}
+
+// ---- Export ----
+async function ambilSemua(){
+ if(!sb) return rows;
+ let semua=[],dari=0;
+ while(dari<10000){
+  let q=sb.from("catatan").select("*").order("tanggal",{ascending:false}).range(dari,dari+999);
+  q=terapkanCari(q);
+  const {data:d,error}=await q;
+  if(error||!d||!d.length) break;
+  semua=semua.concat(d);
+  if(d.length<1000) break;
+  dari+=1000;
+ }
+ return semua;
+}
+
+async function exportCSV(){
+ const semua=await ambilSemua();
+ let csv="Tanggal,Koordinat,Nama Modem,OLT,PON,Redaman,Teknisi,Nama Pelanggan\n";
+ semua.forEach(d=>csv+=`${tglTampil(d.tanggal)},${d.koordinat},${d.barang},${d.olt},${d.pon},${d.redaman||""},${d.teknisi},${d.titik}\n`);
+ let blob=new Blob([csv],{type:"text/csv"});
+ let a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="Data_FTTH.csv";
+ a.click();
+}
+
+async function exportPDF(){
+ const keyword=(prompt("Cari Nama Pelanggan (kosongkan untuk semua data):","")||"").trim().toLowerCase();
+ const semua=await ambilSemua();
+ const hasil=keyword?semua.filter(d=>(d.titik||"").toLowerCase().includes(keyword)):semua;
+ if(hasil.length===0){
+   alert("Nama pelanggan tidak ditemukan.");
+   return;
+ }
+ const {jsPDF}=window.jspdf;
+ const doc=new jsPDF();
+ doc.setFontSize(16);
+ doc.text(keyword?`Hasil Pencarian: ${keyword}`:"Semua Data Pelanggan",14,15);
+ const dataRows=hasil.map(d=>[
+  tglTampil(d.tanggal),d.koordinat,d.barang,d.olt,d.pon,d.redaman||"-",d.teknisi,d.titik
+ ]);
+ doc.autoTable({
+  startY:22,
+  head:[["Tanggal","Koordinat","Nama Modem","OLT","PON","Redaman","Teknisi","Nama Pelanggan"]],
+  body:dataRows,
+  styles:{fontSize:8}
+ });
+ doc.save(keyword?`Laporan_${keyword}.pdf`:"Laporan_FTTH.pdf");
+}
+
+// ---- Mulai ----
+modalCatatan=new bootstrap.Modal(document.getElementById("modalCatatan"));
+
+if(sb){
+ // Wajib login dulu; sesi tersimpan, jadi tidak perlu login ulang tiap buka
+ sb.auth.onAuthStateChange((_ev,session)=>{
+  if(session){
+   tampilkan("app");
+   initApp();
+  }else{
+   tampilkan("login");
+   setStatus(false);
+  }
+ });
+}else{
+ // Mode lokal (database belum diisi): langsung tampil tanpa login
+ btnKeluar.style.display="none";
+ bannerOffline.style.display="";
+ setStatus(false);
+ tampilkan("app");
+ muatModem();
+ muat(true);
+}
+</script>
+</body>
+</html>
