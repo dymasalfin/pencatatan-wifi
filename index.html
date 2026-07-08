@@ -119,12 +119,7 @@ body{padding:8px}
 </div>
 <div class="col-md-6">
 <label class="form-label" for="teknisi">Teknisi</label>
-<select class="form-select" id="teknisi">
-<option>IBRA</option>
-<option>NAFIS</option>
-<option>PAK NO</option>
-<option>PANI</option>
-</select>
+<select class="form-select" id="teknisi" onchange="cekTambahTeknisi()"></select>
 </div>
 <div class="col-4">
 <label class="form-label" for="olt">OLT</label>
@@ -189,9 +184,11 @@ async function keluar(){
  await sb.auth.signOut();
 }
 
-// ---- Daftar modem ----
+// ---- Daftar modem & teknisi ----
 const modemDefault=["Huawei HG8145V5","Huawei EG8245H5","Huawei Biasa","ZTE F609"];
 let modemList=modemDefault.slice();
+const teknisiDefault=["IBRA","NAFIS","PAK NO","PANI"];
+let teknisiList=teknisiDefault.slice();
 const TAMBAH_MODEM="__tambah__";
 
 function renderModem(pilih){
@@ -237,6 +234,52 @@ async function cekTambahModem(){
   modemList.push(nama);
   localStorage.setItem("ftthModems",JSON.stringify(modemList));
   renderModem(nama);
+ }
+}
+
+function renderTeknisi(pilih){
+ teknisi.innerHTML=`<option disabled selected value="">Pilih Teknisi</option>`
+  +teknisiList.map(t=>`<option>${esc(t)}</option>`).join("")
+  +`<option value="${TAMBAH_MODEM}">＋ Tambah teknisi baru…</option>`;
+ if(pilih) teknisi.value=pilih;
+ teknisi.classList.toggle("kosong",!teknisi.value);
+}
+
+async function muatTeknisi(){
+ if(sb){
+  const {data:d,error}=await sb.from("teknisi").select("nama").order("nama");
+  if(!error&&d&&d.length) teknisiList=d.map(x=>x.nama);
+ }else{
+  teknisiList=JSON.parse(localStorage.getItem("ftthTeknisi")||"null")||teknisiDefault.slice();
+ }
+ const dipilih=teknisi&&teknisi.value&&teknisi.value!==TAMBAH_MODEM?teknisi.value:null;
+ renderTeknisi(dipilih);
+}
+
+async function cekTambahTeknisi(){
+ teknisi.classList.toggle("kosong",!teknisi.value);
+ if(teknisi.value!==TAMBAH_MODEM) return;
+ const nama=(prompt("Nama teknisi baru:")||"").trim().toUpperCase();
+ if(!nama){
+  teknisi.selectedIndex=0;
+  teknisi.classList.add("kosong");
+  return;
+ }
+ const ada=teknisiList.find(t=>t.toLowerCase()===nama.toLowerCase());
+ if(ada){
+  alert("Teknisi sudah ada di daftar.");
+  teknisi.value=ada;
+  return;
+ }
+ if(sb){
+  const {error}=await sb.from("teknisi").insert({nama});
+  if(error){alert("Gagal menambah teknisi: "+error.message);teknisi.selectedIndex=0;teknisi.classList.add("kosong");return;}
+  await muatTeknisi();
+  renderTeknisi(nama);
+ }else{
+  teknisiList.push(nama);
+  localStorage.setItem("ftthTeknisi",JSON.stringify(teknisiList));
+  renderTeknisi(nama);
  }
 }
 
@@ -296,7 +339,7 @@ function bukaTambah(){
  editId=null;
  koordinat.value=olt.value=pon.value=redaman.value=titik.value="";
  renderModem();
- teknisi.selectedIndex=0;
+ renderTeknisi();
  modalJudul.textContent="Tambah Catatan";
  btnSimpan.textContent="Simpan";
  modalCatatan.show();
@@ -310,7 +353,7 @@ function editData(id){
  olt.value=d.olt;
  pon.value=d.pon;
  redaman.value=d.redaman||"";
- teknisi.value=d.teknisi;
+ renderTeknisi(d.teknisi);
  titik.value=d.titik;
  editId=id;
  modalJudul.textContent="Edit Catatan";
@@ -321,6 +364,10 @@ function editData(id){
 async function simpan(){
  if(barang.value===""||barang.value===TAMBAH_MODEM){
   alert("Pilih nama modem dulu.");
+  return;
+ }
+ if(teknisi.value===""||teknisi.value===TAMBAH_MODEM){
+  alert("Pilih teknisi dulu.");
   return;
  }
  const item={
@@ -386,12 +433,14 @@ function setStatus(online){
 
 function initApp(){
  muatModem();
+ muatTeknisi();
  muat(true);
  if(!appSudahInit&&sb){
   appSudahInit=true;
   channelRealtime=sb.channel("perubahan")
    .on("postgres_changes",{event:"*",schema:"public",table:"catatan"},muatUlangTunda)
    .on("postgres_changes",{event:"*",schema:"public",table:"modem"},muatModem)
+   .on("postgres_changes",{event:"*",schema:"public",table:"teknisi"},muatTeknisi)
    .subscribe(s=>setStatus(s==="SUBSCRIBED"));
  }
 }
@@ -468,6 +517,7 @@ if(sb){
  setStatus(false);
  tampilkan("app");
  muatModem();
+ muatTeknisi();
  muat(true);
 }
 </script>

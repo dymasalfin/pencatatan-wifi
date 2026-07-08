@@ -4,9 +4,13 @@
 
 drop policy "akses publik catatan" on catatan;
 drop policy "akses publik modem" on modem;
+drop policy "akses publik teknisi" on teknisi;
 
 create policy "hanya login catatan" on catatan
   for all to authenticated using (true) with check (true);
 
 create policy "hanya login modem" on modem
+  for all to authenticated using (true) with check (true);
+
+create policy "hanya login teknisi" on teknisi
   for all to authenticated using (true) with check (true);
