@@ -473,17 +473,15 @@ async function exportCSV(){
 }
 
 async function exportPDF(){
- const keyword=(prompt("Cari Nama Pelanggan (kosongkan untuk semua data):","")||"").trim().toLowerCase();
- const semua=await ambilSemua();
- const hasil=keyword?semua.filter(d=>(d.titik||"").toLowerCase().includes(keyword)):semua;
+ const hasil=await ambilSemua();
  if(hasil.length===0){
-   alert("Nama pelanggan tidak ditemukan.");
+   alert("Belum ada data untuk diexport.");
    return;
  }
  const {jsPDF}=window.jspdf;
  const doc=new jsPDF();
  doc.setFontSize(16);
- doc.text(keyword?`Hasil Pencarian: ${keyword}`:"Semua Data Pelanggan",14,15);
+ doc.text("Semua Data Pelanggan",14,15);
  const dataRows=hasil.map(d=>[
   tglTampil(d.tanggal),d.koordinat,d.barang,d.olt,d.pon,d.redaman||"-",d.teknisi,d.titik
  ]);
@@ -493,7 +491,7 @@ async function exportPDF(){
   body:dataRows,
   styles:{fontSize:8}
  });
- doc.save(keyword?`Laporan_${keyword}.pdf`:"Laporan_FTTH.pdf");
+ doc.save("Laporan_FTTH.pdf");
 }
 
 // ---- Mulai ----
